@@ -84,50 +84,31 @@ class Connection(object):
         Poller(conn, (callback, ))._update_handler()
 
     @gen.coroutine
-    def _cursor(self):
+    def cursor(self):
         conn = yield gen.Task(self._connect)
         cursor = conn.cursor()
-        raise gen.Return(cursor)
+        raise gen.Return(CursorWrapper(cursor))
 
     def putconn(self, conn, close=False):
         self._pool.putconn(conn, close=close)
 
-    @gen.coroutine
-    def query(self, query, parameters=()):
-        """Returns a row list for the given query and parameters."""
-        cursor = yield self._cursor()
-        try:
-            yield gen.Task(self._execute, cursor, query, parameters)
-            column_names = [d[0] for d in cursor.description]
-            raise gen.Return([Row(zip(column_names, row)) for row in cursor])
-        finally:
-            self.putconn(cursor.connection)
-            cursor.close()
 
-    @gen.coroutine
-    def get(self, query, parameters=()):
-        """Returns the (singular) row returned by the given query.
+class CursorWrapper:
+    def __init__(self, cur):
+        self.cursor = cur
 
-        If the query has no results, returns None.  If it has
-        more than one result, raises an exception.
-        """
-        rows = yield self.query(query, parameters)
-        if not rows:
-            raise gen.Return(None)
-        elif len(rows) > 1:
-            raise Exception("Multiple rows returned for Database.get() query")
-        else:
-            raise gen.Return(rows[0])
+    def __del__(self):
+        self.cursor.close()
 
     @gen.coroutine
     def execute(self, query, parameters=()):
-        """Executes the given query."""
-        cursor = yield self._cursor()
+        """Returns a row list for the given query and parameters."""
+        cursor = self.cursor
         try:
             yield gen.Task(self._execute, cursor, query, parameters)
+            raise gen.Return([row for row in cursor])
         finally:
             self.putconn(cursor.connection)
-            cursor.close()
 
     def _execute(self, cursor, query, parameters, callback=None):
         if not isinstance(parameters, (tuple, list)):
@@ -141,12 +122,3 @@ class Connection(object):
             logging.error("Error connecting to PostgreSQL on %s", self.host)
             self.putconn(cursor.connection, close=True)
             # raise gen.Return([])
-
-
-class Row(dict):
-    """A dict that allows for object-like property access syntax."""
-    def __getattr__(self, name):
-        try:
-            return self[name]
-        except KeyError:
-            raise AttributeError(name)
