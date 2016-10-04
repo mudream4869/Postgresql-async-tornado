@@ -57,6 +57,7 @@ class Connection(object):
             client_encoding=client_encoding,
             **kwargs
         )
+
         if host is not None:
             _db_args["host"] = host
         if port is not None:
@@ -87,15 +88,16 @@ class Connection(object):
     def cursor(self):
         conn = yield gen.Task(self._connect)
         cursor = conn.cursor()
-        raise gen.Return(CursorWrapper(cursor))
+        raise gen.Return(CursorWrapper(cursor, self))
 
     def putconn(self, conn, close=False):
         self._pool.putconn(conn, close=close)
 
 
 class CursorWrapper:
-    def __init__(self, cur):
+    def __init__(self, cur, conn):
         self.cursor = cur
+        self.conn = conn
 
     def __del__(self):
         self.cursor.close()
@@ -108,7 +110,7 @@ class CursorWrapper:
             yield gen.Task(self._execute, cursor, query, parameters)
             raise gen.Return([row for row in cursor])
         finally:
-            self.putconn(cursor.connection)
+            self.conn.putconn(cursor.connection)
 
     def _execute(self, cursor, query, parameters, callback=None):
         if not isinstance(parameters, (tuple, list)):
@@ -116,9 +118,7 @@ class CursorWrapper:
 
         try:
             cursor.execute(query, parameters)
-
             Poller(cursor.connection, (callback,))._update_handler()
         except psycopg2.OperationalError:
             logging.error("Error connecting to PostgreSQL on %s", self.host)
-            self.putconn(cursor.connection, close=True)
-            # raise gen.Return([])
+            self.conn.putconn(cursor.connection, close=True)
