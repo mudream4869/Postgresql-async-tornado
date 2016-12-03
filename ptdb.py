@@ -98,19 +98,24 @@ class CursorWrapper:
     def __init__(self, cur, conn):
         self.cursor = cur
         self.conn = conn
+        self.fetchone = cur.fetchone
+        self.fetchall = cur.fetchall
 
     def __del__(self):
+        self.conn.putconn(self.cursor.connection)
         self.cursor.close()
 
     @gen.coroutine
     def execute(self, query, parameters=()):
         """Returns a row list for the given query and parameters."""
-        cursor = self.cursor
-        try:
-            yield gen.Task(self._execute, cursor, query, parameters)
-            raise gen.Return([row for row in cursor])
-        finally:
-            self.conn.putconn(cursor.connection)
+        yield gen.Task(self._execute, self.cursor, query, parameters)
+        self.arraysize = self.cursor.arraysize
+        self.itersize = self.cursor.itersize
+        self.rowcount = self.cursor.rowcount
+        self.rownumber = self.cursor.rownumber
+        self.lastrowid = self.cursor.lastrowid
+        self.query = self.cursor.query
+        self.statusmessage = self.cursor.statusmessage
 
     def _execute(self, cursor, query, parameters, callback=None):
         if not isinstance(parameters, (tuple, list)):

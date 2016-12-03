@@ -2,7 +2,7 @@ import tornado.ioloop
 import tornado.web
 from tornado import gen
 
-import pg
+#import pg
 import ptdb
 
 class DBHandler:
@@ -14,15 +14,16 @@ class DBHandler:
     @gen.coroutine
     def insertRow(self, str1):
         cur = yield self.db.cursor()
-        sqlstr = ('INSERT INTO "tTest"(str1) VALUES (%s)')
+        sqlstr = ('INSERT INTO "tTest"(str1) VALUES (%s) RETURNING id1;')
         sqlarr = (str1, )
-        cur.execute(sqlstr, sqlarr)
+        yield cur.execute(sqlstr, sqlarr)
 
     @gen.coroutine
     def listRow(self):
         cur = yield self.db.cursor()
-        sqlstr = ('SELECT id1, str1 FROM "tTest" WHERE id1 = 123')
-        rows = yield cur.execute(sqlstr)
+        sqlstr = ('SELECT id1, str1 FROM "tTest";')
+        yield cur.execute(sqlstr)
+        rows = cur.fetchall()
 
         ret_rows = []
 
@@ -32,7 +33,7 @@ class DBHandler:
                 "str" : row[1]
             })
 
-        raise gen.Return(ret_rows)
+        return ret_rows
 
 
 class MainHandler(tornado.web.RequestHandler):
